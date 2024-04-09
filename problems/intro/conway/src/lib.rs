@@ -11,33 +11,59 @@ pub struct Grid<T> {
 
 impl<T: Clone + Default> Grid<T> {
     pub fn new(rows: usize, cols: usize) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            rows,
+            cols,
+            grid: vec![T::default(); rows * cols],
+        }
     }
 
     pub fn from_slice(grid: &[T], rows: usize, cols: usize) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            rows,
+            cols,
+            grid: grid.to_vec(),
+        }
     }
 
     pub fn size(&self) -> (usize, usize) {
-        // TODO: your code goes here.
-        unimplemented!()
+        (self.rows, self.cols)
     }
 
     pub fn get(&self, row: usize, col: usize) -> &T {
-        // TODO: your code goes here.
-        unimplemented!()
+        &self.grid[col * self.rows + row]
     }
 
     pub fn set(&mut self, value: T, row: usize, col: usize) {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.grid[col * self.rows + row] = value;
     }
 
     pub fn neighbours(&self, row: usize, col: usize) -> Vec<(usize, usize)> {
-        // TODO: your code goes here.
-        unimplemented!()
+        let (irow, icol) = (row as isize, col as isize);
+        let directions = vec![
+            // row above
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            // row same
+            (0, -1),
+            (0, 1),
+            // row below
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ];
+        directions
+            .into_iter()
+            .map(|pr| (pr.0 + irow, pr.1 + icol))
+            .filter(|(p_row, p_col)| {
+                *p_row >= 0
+                    && *p_row < self.rows as isize
+                    && *p_col >= 0
+                    && *p_col < self.cols as isize
+            })
+            .map(|pr| (pr.0 as usize, pr.1 as usize))
+            .collect()
     }
 }
 
@@ -64,17 +90,36 @@ pub struct GameOfLife {
 
 impl GameOfLife {
     pub fn from_grid(grid: Grid<Cell>) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self { grid }
     }
 
     pub fn get_grid(&self) -> &Grid<Cell> {
-        // TODO: your code goes here.
-        unimplemented!()
+        &self.grid
     }
 
     pub fn step(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        let mut new_grid = Grid::<Cell>::new(self.grid.rows, self.grid.cols);
+        for r in 0..self.get_grid().rows {
+            for c in 0..self.get_grid().cols {
+                let alive_count = self
+                    .get_grid()
+                    .neighbours(r, c)
+                    .into_iter()
+                    .map(|(c_row, c_col)| *self.get_grid().get(c_row, c_col))
+                    .filter(|cell| *cell == Cell::Alive)
+                    .count();
+                let cell = self.get_grid().get(r, c);
+                new_grid.set(
+                    match (cell, alive_count) {
+                        (c, 2) => *c,
+                        (_, 3) => Cell::Alive,
+                        _ => Cell::Dead,
+                    },
+                    r,
+                    c,
+                );
+            }
+        }
+        self.grid = new_grid;
     }
 }
