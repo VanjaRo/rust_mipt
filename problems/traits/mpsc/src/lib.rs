@@ -16,37 +16,43 @@ pub struct SendError<T> {
 }
 
 pub struct Sender<T> {
-    // TODO: your code goes here.
+    buff: Rc<RefCell<VecDeque<T>>>,
+    receiver_closed: Rc<RefCell<bool>>,
 }
 
 impl<T> Sender<T> {
     pub fn send(&self, value: T) -> Result<(), SendError<T>> {
-        // TODO: your code goes here.
-        unimplemented!()
+        if self.is_closed() {
+            return Err(SendError { value });
+        }
+        self.buff.borrow_mut().push_back(value);
+        Ok(())
     }
 
     pub fn is_closed(&self) -> bool {
-        // TODO: your code goes here.
-        unimplemented!()
+        *self.receiver_closed.borrow()
     }
 
     pub fn same_channel(&self, other: &Self) -> bool {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.buff.as_ptr() == other.buff.as_ptr()
     }
 }
 
 impl<T> Clone for Sender<T> {
     fn clone(&self) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            buff: self.buff.clone(),
+            receiver_closed: self.receiver_closed.clone(),
+        }
     }
 }
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        // 1 from the receiver and 1 from current sender
+        if Rc::strong_count(&self.buff) == 2 {
+            *self.receiver_closed.borrow_mut() = true;
+        }
     }
 }
 
@@ -61,31 +67,44 @@ pub enum ReceiveError {
 }
 
 pub struct Receiver<T> {
-    // TODO: your code goes here.
+    buff: Rc<RefCell<VecDeque<T>>>,
+    is_closed: Rc<RefCell<bool>>,
 }
 
 impl<T> Receiver<T> {
     pub fn recv(&mut self) -> Result<T, ReceiveError> {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.buff.borrow_mut().pop_front().ok_or_else(|| {
+            if *self.is_closed.borrow() {
+                return ReceiveError::Closed;
+            }
+            ReceiveError::Empty
+        })
     }
 
     pub fn close(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        *self.is_closed.borrow_mut() = true;
     }
 }
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.close();
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
-    // TODO: your code goes here.
-    unimplemented!()
+    let comm_buff = Rc::new(RefCell::new(VecDeque::<T>::new()));
+    let comm_closed = Rc::new(RefCell::new(false));
+    (
+        Sender {
+            buff: comm_buff.clone(),
+            receiver_closed: comm_closed.clone(),
+        },
+        Receiver {
+            buff: comm_buff,
+            is_closed: comm_closed,
+        },
+    )
 }

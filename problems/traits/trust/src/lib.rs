@@ -10,28 +10,67 @@ pub enum RoundOutcome {
     BothCheated,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum PersonalOutcome {
+    Cooperate,
+    Cheat,
+}
+
+pub trait Agent {
+    fn act(&self) -> PersonalOutcome;
+    fn memorise_op_act(&mut self, _op_act: PersonalOutcome) {}
+}
+
 pub struct Game {
-    // TODO: your code goes here.
+    left_ag: Box<dyn Agent>,
+    right_ag: Box<dyn Agent>,
+    total_left_score: i32,
+    total_right_score: i32,
 }
 
 impl Game {
-    // pub fn new(left: Box<???>, right: Box<???>) -> Self {
-    // TODO: your code goes here.
-    // }
+    pub fn new(left: Box<dyn Agent>, right: Box<dyn Agent>) -> Self {
+        Self {
+            left_ag: left,
+            right_ag: right,
+            total_left_score: 0,
+            total_right_score: 0,
+        }
+    }
 
     pub fn left_score(&self) -> i32 {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.total_left_score
     }
 
     pub fn right_score(&self) -> i32 {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.total_right_score
     }
 
     pub fn play_round(&mut self) -> RoundOutcome {
-        // TODO: your code goes here.
-        unimplemented!()
+        let (left_out, right_out) = (self.left_ag.act(), self.right_ag.act());
+        let round_outcome = match (&left_out, &right_out) {
+            (PersonalOutcome::Cooperate, PersonalOutcome::Cooperate) => {
+                self.total_left_score += 2;
+                self.total_right_score += 2;
+                RoundOutcome::BothCooperated
+            }
+            (PersonalOutcome::Cooperate, PersonalOutcome::Cheat) => {
+                self.total_left_score += -1;
+                self.total_right_score += 3;
+                RoundOutcome::RightCheated
+            }
+            (PersonalOutcome::Cheat, PersonalOutcome::Cooperate) => {
+                self.total_left_score += 3;
+                self.total_right_score += -1;
+                RoundOutcome::LeftCheated
+            }
+            (PersonalOutcome::Cheat, PersonalOutcome::Cheat) => RoundOutcome::BothCheated,
+        };
+
+        self.left_ag.memorise_op_act(right_out);
+        self.right_ag.memorise_op_act(left_out);
+
+        round_outcome
     }
 }
 
@@ -40,31 +79,111 @@ impl Game {
 #[derive(Default)]
 pub struct CheatingAgent {}
 
-// TODO: your code goes here.
+impl Agent for CheatingAgent {
+    fn act(&self) -> PersonalOutcome {
+        PersonalOutcome::Cheat
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Default)]
 pub struct CooperatingAgent {}
 
-// TODO: your code goes here.
+impl Agent for CooperatingAgent {
+    fn act(&self) -> PersonalOutcome {
+        PersonalOutcome::Cooperate
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct GrudgerAgent {}
+pub struct GrudgerAgent {
+    opinion: PersonalOutcome,
+}
 
-// TODO: your code goes here.
+impl Agent for GrudgerAgent {
+    fn act(&self) -> PersonalOutcome {
+        self.opinion
+    }
+
+    fn memorise_op_act(&mut self, op_act: PersonalOutcome) {
+        if op_act == PersonalOutcome::Cheat {
+            self.opinion = PersonalOutcome::Cheat;
+        }
+    }
+}
+
+impl Default for GrudgerAgent {
+    fn default() -> Self {
+        Self {
+            opinion: PersonalOutcome::Cooperate,
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct CopycatAgent {}
+pub struct CopycatAgent {
+    prev_op_act: PersonalOutcome,
+}
 
-// TODO: your code goes here.
+impl Agent for CopycatAgent {
+    fn act(&self) -> PersonalOutcome {
+        self.prev_op_act
+    }
+
+    fn memorise_op_act(&mut self, op_act: PersonalOutcome) {
+        self.prev_op_act = op_act;
+    }
+}
+
+impl Default for CopycatAgent {
+    fn default() -> Self {
+        Self {
+            prev_op_act: PersonalOutcome::Cooperate,
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct DetectiveAgent {
-    // TODO: your code goes here.
+    rounds_played: u8,
+    as_copycat: bool,
+    prev_op_act: PersonalOutcome,
+}
+
+impl Agent for DetectiveAgent {
+    fn act(&self) -> PersonalOutcome {
+        match self.rounds_played {
+            0 => PersonalOutcome::Cooperate,
+            1 => PersonalOutcome::Cheat,
+            2 => PersonalOutcome::Cooperate,
+            3 => PersonalOutcome::Cooperate,
+            _ => self.prev_op_act,
+        }
+    }
+
+    fn memorise_op_act(&mut self, op_act: PersonalOutcome) {
+        if self.rounds_played <= 3 && op_act == PersonalOutcome::Cheat {
+            self.as_copycat = true;
+        }
+        if self.rounds_played >= 3 && self.as_copycat {
+            self.prev_op_act = op_act;
+        }
+        self.rounds_played = self.rounds_played.saturating_add(1);
+    }
+}
+
+impl Default for DetectiveAgent {
+    fn default() -> Self {
+        Self {
+            rounds_played: 0,
+            as_copycat: false,
+            prev_op_act: PersonalOutcome::Cheat,
+        }
+    }
 }
 
 // TODO: your code goes here.
