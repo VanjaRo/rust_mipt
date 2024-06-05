@@ -1,4 +1,3 @@
-#![feature(generic_associated_types)]
 use ntest::timeout;
 use rand::{distributions::Alphanumeric, Rng};
 use std::collections::{hash_map::Entry::*, HashMap};
