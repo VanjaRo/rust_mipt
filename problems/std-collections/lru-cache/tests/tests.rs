@@ -53,7 +53,7 @@ fn should_compile() {
     struct Value {
         _value: i32,
     }
-    LRUCache::<Key, Value>::new(1);
+    LRUCache::<Value>::new(1);
 }
 
 #[test]
