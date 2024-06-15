@@ -33,7 +33,7 @@ impl BitSequence {
         assert!(total_len <= 16);
 
         Self {
-            bits: other.bits() << self.len() | self.bits(),
+            bits: self.bits() << other.len() | other.bits(),
             len: total_len,
         }
     }
@@ -58,7 +58,7 @@ impl<T: BufRead> BitReader<T> {
         assert!(len <= 8);
         if self.reminder.len() < len {
             if let Some(fst_val) = self.stream.fill_buf()?.get(0) {
-                self.reminder = self.reminder.concat(BitSequence::new(*fst_val as u16, 8));
+                self.reminder = BitSequence::new(*fst_val as u16, 8).concat(self.reminder);
                 self.stream.consume(1);
             } else {
                 return Err(io::Error::new(

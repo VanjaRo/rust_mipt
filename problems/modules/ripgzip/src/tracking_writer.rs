@@ -57,7 +57,7 @@ impl<T: Write> TrackingWriter<T> {
         let hb_len = self.history_buff.len();
         // println!("{}", hb_len);
         ensure!(
-            hb_len >= dist,
+            dist <= hb_len,
             "dist should be less than or equal to the history of previous writes"
         );
         ensure!(len <= dist, "len should be less than dist");
