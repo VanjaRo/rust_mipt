@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, convert::TryFrom, io::BufRead};
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 
 use crate::bit_reader::{BitReader, BitSequence};
 
@@ -92,19 +92,56 @@ where
 
     #[allow(unused)]
     pub fn decode_symbol(&self, seq: BitSequence) -> Option<T> {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.map.get(&seq).copied()
     }
 
     pub fn read_symbol<U: BufRead>(&self, bit_reader: &mut BitReader<U>) -> Result<T> {
-        // TODO: your code goes here.
-        unimplemented!()
+        let mut bit_sequence = BitSequence::new(0, 0);
+
+        for _ in 0..MAX_BITS {
+            let bit = bit_reader.read_bits(1)?;
+            bit_sequence = bit_sequence.concat(bit);
+            // println!("{:b} {}", bit_sequence.bits(), bit_sequence.len());
+            if let Some(value) = self.decode_symbol(bit_sequence) {
+                return Ok(value);
+            }
+        }
+        bail!("no suitable ")
     }
 
     pub fn from_lengths(code_lengths: &[u8]) -> Result<Self> {
         // See RFC 1951, section 3.2.2.
-        // TODO: your code goes here.
-        unimplemented!()
+        ensure!(code_lengths.len() <= u16::MAX as usize);
+
+        let mut bl_count: [u16; MAX_BITS + 1] = [0; MAX_BITS + 1];
+        let mut next_code: [u16; MAX_BITS + 1] = [0; MAX_BITS + 1];
+
+        for &bl in code_lengths {
+            ensure!(bl as usize <= MAX_BITS);
+            bl_count[bl as usize] += 1;
+        }
+
+        let mut code = 0;
+        bl_count[0] = 0;
+        for bits in 1..=MAX_BITS {
+            code = (code + bl_count[bits - 1]) << 1;
+            next_code[bits] = code;
+        }
+        println!("{:?}", next_code);
+        let mut huffman_map = HashMap::<BitSequence, T>::new();
+        for (idx, &len) in code_lengths.iter().enumerate() {
+            if len != 0 {
+                let bits_val = next_code[len as usize];
+                let bit_seq = BitSequence::new(bits_val, len);
+                let val_code_word = T::try_from(HuffmanCodeWord(idx as u16))?;
+
+                // println!("-- {:b} {}", bits_val, len);
+                huffman_map.insert(bit_seq, val_code_word);
+                next_code[len as usize] += 1;
+            }
+        }
+
+        Ok(HuffmanCoding::new(huffman_map))
     }
 }
 
