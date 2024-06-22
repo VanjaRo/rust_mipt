@@ -3,50 +3,87 @@
 use std::collections::VecDeque;
 use std::io::{self, Write};
 
-use anyhow::{anyhow, ensure, Result};
-use crc::{Crc, Digest};
+use anyhow::{ensure, Context, Result};
+use crc::{Crc, Digest, CRC_32_ISO_HDLC};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const HISTORY_SIZE: usize = 32768;
+const ALGORITHM: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 pub struct TrackingWriter<T> {
     inner: T,
-    // TODO: your code goes here.
+    history_buff: VecDeque<u8>,
+    byte_counter: usize,
+    digest: Digest<'static, u32>,
 }
 
 impl<T: Write> Write for TrackingWriter<T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // TODO: your code goes here.
-        unimplemented!()
+        let written_bytes = self.inner.write(buf)?;
+        self.byte_counter += written_bytes;
+        self.digest.update(&buf[..written_bytes]);
+        let mut drain_val = 0;
+        if written_bytes >= HISTORY_SIZE {
+            drain_val = self.history_buff.len();
+        } else if self.history_buff.len().wrapping_add(written_bytes) > HISTORY_SIZE {
+            drain_val = self.history_buff.len().wrapping_add(written_bytes) - HISTORY_SIZE;
+        }
+        self.history_buff.drain(0..drain_val);
+        // preventing possible write bigger than HISTORY_SIZE
+        let iter_st = 0.max(written_bytes.saturating_sub(HISTORY_SIZE));
+        self.history_buff.extend(&buf[iter_st..written_bytes]);
+
+        Ok(written_bytes)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.byte_counter = 0;
+        self.history_buff = VecDeque::with_capacity(HISTORY_SIZE);
+        self.digest = ALGORITHM.digest();
+        self.inner.flush()
     }
 }
 
 impl<T: Write> TrackingWriter<T> {
     pub fn new(inner: T) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            inner,
+            history_buff: VecDeque::with_capacity(HISTORY_SIZE),
+            byte_counter: 0,
+            digest: ALGORITHM.digest(),
+        }
     }
 
     /// Write a sequence of `len` bytes written `dist` bytes ago.
     pub fn write_previous(&mut self, dist: usize, len: usize) -> Result<()> {
-        // TODO: your code goes here.
-        unimplemented!()
+        let hb_len = self.history_buff.len();
+        // println!("{}", hb_len);
+        ensure!(
+            dist <= hb_len,
+            "dist should be less than or equal to the history of previous writes"
+        );
+
+        let iter_st = hb_len - dist;
+        let iter_fin = self.history_buff.len().min(iter_st + len);
+        self.write_all(
+            self.history_buff
+                .range(iter_st..iter_fin)
+                .cycle()
+                .take(len)
+                .copied()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .context("write_all failed")
     }
 
     pub fn byte_count(&self) -> usize {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.byte_counter
     }
 
-    pub fn crc32(mut self) -> u32 {
-        // TODO: your code goes here.
-        unimplemented!()
+    pub fn crc32(&self) -> u32 {
+        self.digest.clone().finalize()
     }
 }
 
@@ -60,7 +97,7 @@ mod tests {
     #[test]
     fn write() -> Result<()> {
         let mut buf: &mut [u8] = &mut [0u8; 10];
-        let mut writer = TrackingWriter::new(&mut buf);
+        let mut writer: TrackingWriter<&mut [u8]> = TrackingWriter::new(buf);
 
         assert_eq!(writer.write(&[1, 2, 3, 4])?, 4);
         assert_eq!(writer.byte_count(), 4);
