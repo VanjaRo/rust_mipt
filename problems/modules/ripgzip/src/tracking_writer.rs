@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::io::{self, Write};
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use crc::{Crc, Digest, CRC_32_ISO_HDLC};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -38,6 +38,9 @@ impl<T: Write> Write for TrackingWriter<T> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        self.byte_counter = 0;
+        self.history_buff = VecDeque::with_capacity(HISTORY_SIZE);
+        self.digest = ALGORITHM.digest();
         self.inner.flush()
     }
 }
@@ -60,12 +63,14 @@ impl<T: Write> TrackingWriter<T> {
             dist <= hb_len,
             "dist should be less than or equal to the history of previous writes"
         );
-        ensure!(len <= dist, "len should be less than dist");
 
         let iter_st = hb_len - dist;
+        let iter_fin = self.history_buff.len().min(iter_st + len);
         self.write_all(
             self.history_buff
-                .range(iter_st..iter_st + len)
+                .range(iter_st..iter_fin)
+                .cycle()
+                .take(len)
                 .copied()
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -77,8 +82,8 @@ impl<T: Write> TrackingWriter<T> {
         self.byte_counter
     }
 
-    pub fn crc32(mut self) -> u32 {
-        self.digest.finalize()
+    pub fn crc32(&self) -> u32 {
+        self.digest.clone().finalize()
     }
 }
 
