@@ -1,20 +1,14 @@
 #![forbid(unsafe_code)]
 
-use std::{
-    convert::TryFrom,
-    io::{BufRead, Write},
-};
+use std::io::BufRead;
 
-use anyhow::{anyhow, ensure, Context, Result};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use anyhow::{Context, Result};
 
 use crate::bit_reader::BitReader;
-use crate::huffman_coding::{self, LitLenToken};
-use crate::tracking_writer::TrackingWriter;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BlockHeader {
     pub is_final: bool,
     pub compression_type: CompressionType,
@@ -28,22 +22,58 @@ pub enum CompressionType {
     Reserved = 3,
 }
 
+impl Default for CompressionType {
+    fn default() -> Self {
+        Self::Uncompressed
+    }
+}
+
+impl From<u16> for CompressionType {
+    fn from(value: u16) -> Self {
+        match value {
+            0 => Self::Uncompressed,
+            1 => Self::FixedTree,
+            2 => Self::DynamicTree,
+            _ => Self::Reserved,
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct DeflateReader<T> {
     bit_reader: BitReader<T>,
-    // TODO: your code goes here.
+    final_reached: bool,
 }
 
 impl<T: BufRead> DeflateReader<T> {
     pub fn new(bit_reader: BitReader<T>) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            bit_reader,
+            final_reached: false,
+        }
     }
 
     pub fn next_block(&mut self) -> Option<Result<(BlockHeader, &mut BitReader<T>)>> {
-        // TODO: your code goes here.
-        unimplemented!()
+        if self.final_reached {
+            return None;
+        }
+
+        let mut header = BlockHeader::default();
+        match self.bit_reader.read_bits(1) {
+            Ok(is_final) => {
+                header.is_final = is_final.bits() == 1;
+                self.final_reached = header.is_final
+            }
+            Err(err) => return Some(Err(err).context("reading final bit")),
+        }
+        match self.bit_reader.read_bits(2) {
+            Ok(comp_type) => {
+                header.compression_type = comp_type.bits().into();
+            }
+            Err(err) => return Some(Err(err).context("reading compression type bits")),
+        }
+        Some(Ok((header, &mut self.bit_reader)))
     }
 }
 
