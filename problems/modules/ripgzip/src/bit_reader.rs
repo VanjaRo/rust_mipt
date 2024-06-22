@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use byteorder::ReadBytesExt;
 use std::io::{self, BufRead};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,10 +15,7 @@ impl BitSequence {
     pub fn new(bits: u16, len: u8) -> Self {
         assert!(len <= 16, "the length shouldn't exceed 16 bits");
 
-        Self {
-            bits: bits,
-            len: len,
-        }
+        Self { bits, len }
     }
 
     pub fn bits(&self) -> u16 {
@@ -55,23 +53,20 @@ impl<T: BufRead> BitReader<T> {
     }
 
     pub fn read_bits(&mut self, len: u8) -> io::Result<BitSequence> {
-        assert!(len <= 8);
-        if self.reminder.len() < len {
-            if let Some(fst_val) = self.stream.fill_buf()?.get(0) {
-                self.reminder = BitSequence::new(*fst_val as u16, 8).concat(self.reminder);
-                self.stream.consume(1);
-            } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "can't read the requested amount of bits",
-                ));
-            }
+        assert!(len <= 16);
+        let mut tmp_bitseq = self.reminder.bits() as u32;
+        let mut tmp_len = self.reminder.len();
+        while tmp_len < len {
+            let new_byte = self.stream.read_u8()? as u32;
+            tmp_bitseq |= new_byte << tmp_len;
+            tmp_len += 8;
         }
-        let reminder_old = self.reminder;
+
         // Getting values of the "len" amount of bits
-        let trailing_mask: u16 = (1 << len) - 1;
-        let bits_to_ret = reminder_old.bits() & trailing_mask;
-        self.reminder = BitSequence::new(reminder_old.bits() >> len, reminder_old.len() - len);
+        let trailing_mask: u32 = (1 << len) - 1;
+        let bits_to_ret: u16 = (tmp_bitseq & trailing_mask) as u16;
+
+        self.reminder = BitSequence::new((tmp_bitseq >> len) as u16, tmp_len - len);
 
         Ok(BitSequence::new(bits_to_ret, len))
     }
