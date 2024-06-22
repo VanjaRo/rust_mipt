@@ -1,16 +1,10 @@
 #![forbid(unsafe_code)]
 
-use std::io::{self, BufRead, Write};
+use std::io::BufRead;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use crc::Crc;
-
-use crate::{
-    bit_reader::BitReader,
-    deflate::{self, DeflateReader},
-    tracking_writer::TrackingWriter,
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -80,7 +74,7 @@ impl MemberHeader {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CompressionMethod {
     Deflate,
     Unknown(u8),
@@ -183,13 +177,94 @@ impl<T: BufRead> GzipReader<T> {
         Self { reader }
     }
 
-    fn parse_header(mut header: &[u8]) -> Result<(MemberHeader, MemberFlags)> {
-        // See RFC 1952, section 2.3.
-        // TODO: your code goes here.
-        unimplemented!()
+    pub fn next_member(mut self) -> Option<Result<(MemberHeader, MemberReader<T>)>> {
+        match self.reader.fill_buf() {
+            Ok(buf) => {
+                if !buf.is_empty() {
+                    Some(self.parse_header())
+                } else {
+                    None
+                }
+            }
+            Err(err) => Some(Err(anyhow!(err))),
+        }
     }
 
-    // TODO: your code goes here.
+    fn parse_header(mut self) -> Result<(MemberHeader, MemberReader<T>)> {
+        // See RFC 1952, section 2.3.
+        let id1 = self.reader.read_u8()?;
+        let id2 = self.reader.read_u8()?;
+        ensure!(id1 == ID1 && id2 == ID2, "wrong id values");
+
+        let compression_method =
+            CompressionMethod::from(self.reader.read_u8().context("Compression Method")?);
+        ensure!(
+            compression_method == CompressionMethod::Deflate,
+            "unsupported compression method"
+        );
+
+        let flgs = MemberFlags(self.reader.read_u8().context("FLGS")?);
+
+        let is_text = flgs.is_text();
+        let mtime = self.reader.read_u32::<LittleEndian>().context("MTIME")?;
+        let xfl = self.reader.read_u8().context("eXtra FLags")?;
+        let os = self.reader.read_u8().context("Operating System")?;
+
+        let mut extra: Option<Vec<u8>> = None;
+        if flgs.has_extra() {
+            let xlen = self.reader.read_u16::<LittleEndian>().context("XLEN")?;
+            let mut buf = vec![0; xlen as usize];
+            self.reader
+                .read_exact(buf.as_mut_slice())
+                .context("reading extra flags")?;
+            extra.replace(buf);
+        }
+
+        let mut f_name: Option<String> = None;
+        if flgs.has_name() {
+            let mut buf: Vec<u8> = vec![];
+            self.reader
+                .read_until(0, &mut buf)
+                .context("reading file name")?;
+            f_name.replace(
+                String::from_utf8(buf).context("converting file name byte stream to string")?,
+            );
+        }
+
+        let mut comment: Option<String> = None;
+        if flgs.has_comment() {
+            let mut buf: Vec<u8> = vec![];
+            self.reader
+                .read_until(0, &mut buf)
+                .context("reading comment")?;
+            comment.replace(
+                String::from_utf8(buf).context("converting comment byte stream to string")?,
+            );
+        }
+
+        let has_crc = flgs.has_crc();
+
+        let member_header = MemberHeader {
+            compression_method,
+            modification_time: mtime,
+            extra,
+            name: f_name,
+            comment,
+            extra_flags: xfl,
+            os,
+            has_crc,
+            is_text,
+        };
+
+        if flgs.has_crc() {
+            let crc16 = self
+                .reader
+                .read_u16::<LittleEndian>()
+                .context("reading crc16")?;
+            ensure!(member_header.crc16() == crc16, "header crc16 check failed");
+        }
+        Ok((member_header, MemberReader { inner: self.reader }))
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -204,7 +279,15 @@ impl<T: BufRead> MemberReader<T> {
     }
 
     pub fn read_footer(mut self) -> Result<(MemberFooter, GzipReader<T>)> {
-        // TODO: your code goes here.
-        unimplemented!()
+        let data_crc32 = self.inner.read_u32::<LittleEndian>()?;
+        let data_size = self.inner.read_u32::<LittleEndian>()?;
+
+        Ok((
+            MemberFooter {
+                data_crc32,
+                data_size,
+            },
+            GzipReader::new(self.inner),
+        ))
     }
 }
