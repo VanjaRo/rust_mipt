@@ -27,10 +27,7 @@ impl Context {
             .insert(String::from(key.as_ref()), Box::new(obj));
     }
 
-    pub fn get<V>(&self, key: impl AsRef<str>) -> &V
-    where
-        V: 'static,
-    {
+    pub fn get<V: 'static>(&self, key: impl AsRef<str>) -> &V {
         self.hmap_k_v
             .get(key.as_ref())
             .and_then(|boxed_val| boxed_val.downcast_ref())
