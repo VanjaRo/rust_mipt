@@ -2,67 +2,93 @@
 use std::rc::Rc;
 
 pub struct PRef<T> {
-    // TODO: your code goes here.
+    value: Rc<Node<T>>,
+}
+
+struct Node<T> {
+    value: T,
+    next: Option<Rc<Node<T>>>,
 }
 
 impl<T> std::ops::Deref for PRef<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // TODO: your code goes here.
-        unimplemented!()
+        &self.value.as_ref().value
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct PStack<T> {
-    // TODO: your code goes here.
+    head: Option<Rc<Node<T>>>,
+    len: usize,
 }
 
 impl<T> Default for PStack<T> {
     fn default() -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self { head: None, len: 0 }
     }
 }
 
 impl<T> Clone for PStack<T> {
     fn clone(&self) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            head: self.head.clone(),
+            len: self.len,
+        }
+    }
+}
+
+impl<T> Iterator for PStack<T> {
+    type Item = PRef<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((next_node, new_stack)) = self.pop() {
+            self.head = new_stack.head;
+            return Some(next_node);
+        }
+        None
     }
 }
 
 impl<T> PStack<T> {
     pub fn new() -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self::default()
     }
 
     pub fn push(&self, value: T) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            head: Some(Rc::new(Node {
+                value,
+                next: self.head.clone(),
+            })),
+            len: self.len + 1,
+        }
     }
 
     pub fn pop(&self) -> Option<(PRef<T>, Self)> {
-        // TODO: your code goes here.
-        unimplemented!()
+        match self.head.clone() {
+            Some(node_ref) => {
+                let new_stack = Self {
+                    head: node_ref.next.clone(),
+                    len: self.len - 1,
+                };
+                Some((PRef { value: node_ref }, new_stack))
+            }
+            None => None,
+        }
     }
 
     pub fn len(&self) -> usize {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.len == 0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PRef<T>> {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.clone()
     }
 }
-
