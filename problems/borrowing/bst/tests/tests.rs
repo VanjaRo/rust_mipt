@@ -3,7 +3,7 @@ use ntest::timeout;
 use rand::{seq::SliceRandom as _, Rng as _};
 use std::collections::HashMap;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct Number(i32);
 
 #[test]
