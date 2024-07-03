@@ -119,10 +119,9 @@ impl Arena {
                 addrs_ref_count
                     .entry(gc_ref)
                     .and_modify(|count| *count += 1)
-                    .or_insert(0);
+                    .or_insert(1);
             }
         });
-
         let mut marked_addrs = HashSet::<usize>::new();
         self.addr_to_rc.iter().for_each(|(addr, rc_scan)| {
             if Rc::weak_count(rc_scan) > *addrs_ref_count.get(addr).unwrap_or(&0) {
