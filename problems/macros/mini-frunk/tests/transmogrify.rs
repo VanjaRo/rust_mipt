@@ -1,7 +1,7 @@
 mod common;
 use common::*;
-use mini_frunk::transmogrify::{transmogrify_from, Plucker, Sculptor, Transmogrifier};
-use mini_frunk::{hlist, HList};
+use mini_frunk_core::transmogrify::{transmogrify_from, Plucker, Sculptor, Transmogrifier};
+use mini_frunk_core::{hlist, HList};
 
 #[test]
 fn pluck_basic() {
@@ -74,7 +74,7 @@ fn non_aligned_transmogrify() {
 #[cfg(feature = "compilation-fail-transmogrify")]
 #[test]
 fn compilation_fail_transmogrify() {
-    use mini_frunk::{hlist, HList};
+    use mini_frunk_core::{hlist, HList};
     let h = hlist![9000, "joe", 41f32, true];
     let (reshaped, remainder): (HList![f32, i32, &str], _) = h.sculpt();
     assert_eq!(reshaped, hlist![41f32, 9000, "joe"]);

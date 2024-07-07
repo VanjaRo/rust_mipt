@@ -1,7 +1,7 @@
 mod common;
 use common::*;
-use mini_frunk::generic::{convert_from, from_generic, into_generic};
-use mini_frunk::hlist;
+use mini_frunk_core::generic::{convert_from, from_generic, into_generic};
+use mini_frunk_core::hlist;
 
 #[test]
 fn person_into_generic() {

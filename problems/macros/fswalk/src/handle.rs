@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use std::path::Path;
+
 pub enum Handle<'a> {
     Dir(DirHandle<'a>),
     File(FileHandle<'a>),
@@ -10,33 +12,60 @@ pub enum Handle<'a> {
 }
 
 pub struct DirHandle<'a> {
-    // TODO: your code goes here.
+    path: &'a Path,
+    processed: bool,
 }
 
 impl<'a> DirHandle<'a> {
+    pub fn new(path: &'a Path) -> Self {
+        Self {
+            path,
+            processed: false,
+        }
+    }
+
+    pub fn processed(&self) -> bool {
+        self.processed
+    }
+    pub fn reset(&mut self) {
+        self.processed = false;
+    }
+
     pub fn descend(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.processed = true
     }
 
     pub fn path(&self) -> &Path {
-        // TODO: your code goes here.
-        unimplemented!()
+        &self.path
     }
 }
 
 pub struct FileHandle<'a> {
-    // TODO: your code goes here.
+    path: &'a Path,
+    processed: bool,
 }
 
 impl<'a> FileHandle<'a> {
+    pub fn new(path: &'a Path) -> Self {
+        Self {
+            path,
+            processed: false,
+        }
+    }
+
     pub fn read(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        self.processed = true
+    }
+
+    pub fn processed(&self) -> bool {
+        self.processed
+    }
+
+    pub fn reset(&mut self) {
+        self.processed = false;
     }
 
     pub fn path(&self) -> &Path {
-        // TODO: your code goes here.
-        unimplemented!()
+        &self.path
     }
 }

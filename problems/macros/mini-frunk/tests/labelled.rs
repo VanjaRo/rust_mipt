@@ -2,8 +2,10 @@ mod common;
 use common::*;
 
 // Note the symbols import! You shouldn't use one symbol names.
-use mini_frunk::labelled::{from_labelled_generic, into_labelled_generic, labelled_convert_from};
-use mini_frunk::{field, field::symbols::*, hlist};
+use mini_frunk_core::labelled::{
+    from_labelled_generic, into_labelled_generic, labelled_convert_from,
+};
+use mini_frunk_core::{field, field::symbols::*, hlist};
 
 #[test]
 fn person_from_labelled_generic() {

@@ -1,4 +1,4 @@
-use mini_frunk::{Generic, LabelledGeneric};
+use mini_frunk_derive::{Generic, LabelledGeneric};
 
 #[derive(Generic, LabelledGeneric, Debug, Clone, PartialEq)]
 pub struct Person<'a> {
