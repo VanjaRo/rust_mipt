@@ -1,5 +1,5 @@
-use mini_frunk::hlist::{HCons, HNil};
-use mini_frunk::{hlist, hlist_pat, HList};
+use mini_frunk_core::hlist::{HCons, HNil};
+use mini_frunk_core::{hlist, hlist_pat, HList};
 use static_assertions::assert_type_eq_all as assert_type_eq;
 
 #[test]
