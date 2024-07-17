@@ -24,11 +24,17 @@ impl ToSql for ObjectId {
     }
 }
 
-// impl From<ObjectId> for i64 {
-//     fn from(id: ObjectId) -> i64 {
-//         id.0
-//     }
-// }
+impl From<ObjectId> for i64 {
+    fn from(id: ObjectId) -> i64 {
+        id.0
+    }
+}
+
+impl From<i64> for ObjectId {
+    fn from(i: i64) -> ObjectId {
+        ObjectId(i)
+    }
+}
 
 impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -82,4 +88,44 @@ impl<'a> ToSql for Value<'a> {
     }
 }
 
-// TODO: your code goes here.
+// using ident for enum_var to use pattern matching semantics for the second method
+macro_rules! impl_val_from_ty {
+    ($from_ty:ty, $enum_var:ident) => {
+        impl<'a> From<&'a $from_ty> for Value<'a> {
+            fn from(ty: &'a $from_ty) -> Self {
+                Value::$enum_var(*ty)
+            }
+        }
+        impl<'a> From<Value<'a>> for $from_ty {
+            fn from(val: Value<'a>) -> Self {
+                if let Value::$enum_var(v) = val {
+                    return v;
+                }
+                panic!("no matching value to unwrap");
+            }
+        }
+    };
+}
+
+macro_rules! impl_val_from_ty_cow {
+    ($from_ty:ty, $enum_var:ident) => {
+        impl<'a> From<&'a $from_ty> for Value<'a> {
+            fn from(ty: &'a $from_ty) -> Self {
+                Value::$enum_var(Cow::Borrowed(ty))
+            }
+        }
+        impl<'a> From<Value<'a>> for $from_ty {
+            fn from(val: Value<'a>) -> Self {
+                if let Value::$enum_var(v) = val {
+                    return v.into_owned();
+                }
+                panic!("no matching value to unwrap")
+            }
+        }
+    };
+}
+impl_val_from_ty_cow!(String, String);
+impl_val_from_ty_cow!(Vec<u8>, Bytes);
+impl_val_from_ty!(i64, Int64);
+impl_val_from_ty!(f64, Float64);
+impl_val_from_ty!(bool, Bool);
