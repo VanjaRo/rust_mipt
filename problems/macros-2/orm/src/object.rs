@@ -6,13 +6,34 @@ use std::any::Any;
 
 pub trait Object: Any + Sized {
     fn to_row(&self) -> Row;
-    fn from_row(row: &Row) -> Self;
+    fn from_row(row: Row) -> Self;
     fn get_schema() -> &'static Schema;
 }
 
-pub trait Store {}
+pub trait Store {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn get_schema(&self) -> &'static Schema;
+    fn to_row(&self) -> Row;
+}
 
-impl<T: Object> Store for T {}
+impl<T: Object> Store for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn get_schema(&self) -> &'static Schema {
+        T::get_schema()
+    }
+
+    fn to_row(&self) -> Row {
+        self.to_row()
+    }
+}
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct Schema {
