@@ -90,10 +90,17 @@ impl<'a> From<ErrorWithCtx<'a, rusqlite::Error>> for Error {
 
                 let text = msg.as_ref().unwrap();
                 let column_name = if text.contains("no such column:") {
-                    text.split("no such column:").last().unwrap().trim()
+                    Some(text.split("no such column:").last().unwrap().trim())
+                } else if text.contains("has no column named") {
+                    Some(text.split("has no column named").last().unwrap().trim())
                 } else {
-                    text.split("has no column named").last().unwrap().trim()
+                    None
                 };
+
+                if column_name.is_none() {
+                    return Error::Storage(Box::new(rusqlite::Error::SqliteFailure(err_sql, msg)));
+                }
+                let column_name = column_name.unwrap();
 
                 let field = ctx_schema
                     .obj_fields

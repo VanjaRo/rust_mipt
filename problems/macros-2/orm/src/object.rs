@@ -44,6 +44,9 @@ pub struct Schema {
 
 impl Schema {
     pub fn columns_to_sql(&self) -> String {
+        if self.obj_fields.is_empty() {
+            return "*".to_string();
+        }
         self.obj_fields
             .iter()
             .map(|field| field.column.to_string())

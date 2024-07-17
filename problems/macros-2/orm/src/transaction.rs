@@ -62,7 +62,7 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn get<T: Object>(&self, id: ObjectId) -> Result<Tx<'_, T>> {
-        self.ensure_table::<T>()?;
+        // self.ensure_table::<T>()?;
 
         // check the cache
         if let Some(state) = self.state_cash.borrow_mut().get(&id).cloned() {

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 use crate::{
     data::{DataType, Value},
-    error::{Error, ErrorCtx, ErrorWithCtx, Result, UnexpectedTypeError},
+    error::{Error, ErrorCtx, ErrorWithCtx, NotFoundError, Result, UnexpectedTypeError},
     object::Schema,
     ObjectId,
 };
@@ -40,19 +40,27 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
     }
 
     fn create_table(&self, schema: &Schema) -> Result<()> {
-        let query = format!(
+        let mut query = format!(
             "CREATE TABLE {}(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        {}
-    )",
-            schema.table_name,
-            schema
-                .obj_fields
-                .iter()
-                .map(|field| format!("{} {}", field.name, field.data_ty))
-                .collect::<Vec<_>>()
-                .join(", ")
+        id INTEGER PRIMARY KEY AUTOINCREMENT",
+            schema.table_name
         );
+        if !schema.obj_fields.is_empty() {
+            write!(&mut query, ",").unwrap();
+            write!(
+                &mut query,
+                "{}",
+                schema
+                    .obj_fields
+                    .iter()
+                    .map(|field| format!("{} {}", field.column, field.data_ty))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .unwrap();
+        }
+        write!(&mut query, ")").unwrap();
+        println!("{}", query);
 
         self.execute(&query, [])
             .map_err(|e| Error::with_schema(e, schema))?;
@@ -60,7 +68,8 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
     }
 
     fn insert_row(&self, schema: &Schema, row: &RowSlice) -> Result<ObjectId> {
-        let mut sql_query = format!("INSERT INTO {}", schema.table_name);
+        let mut sql_query = format!("INSERT INTO {} ", schema.table_name);
+
         if row.is_empty() {
             write!(&mut sql_query, "DEFAULT VALUES").unwrap();
         } else {
@@ -103,6 +112,14 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
     fn select_row(&self, id: ObjectId, schema: &Schema) -> Result<Row<'static>> {
         // SELECT co1, col2 FROM table WHERE id = 123
         // may add self.prepare_cached(sql)
+
+        if !self.table_exists(&schema.table_name).unwrap() {
+            return Err(Error::NotFound(Box::new(NotFoundError {
+                object_id: id,
+                type_name: schema.obj_ty,
+            })));
+        }
+
         let sql_query = format!(
             "SELECT {} FROM {} WHERE id = ?",
             schema.columns_to_sql(),

@@ -36,6 +36,12 @@ impl From<i64> for ObjectId {
     }
 }
 
+impl ObjectId {
+    pub fn into_i64(&self) -> i64 {
+        self.0
+    }
+}
+
 impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -53,6 +59,24 @@ pub enum DataType {
     Bool,
 }
 
+pub trait DataTypeWrapper {
+    const TYPE: DataType;
+}
+
+macro_rules! datatype_wrap {
+    ($from_ty:ty, $enum_var:ident) => {
+        impl DataTypeWrapper for $from_ty {
+            const TYPE: DataType = DataType::$enum_var;
+        }
+    };
+}
+
+datatype_wrap!(String, String);
+datatype_wrap!(Vec<u8>, Bytes);
+datatype_wrap!(i64, Int64);
+datatype_wrap!(f64, Float64);
+datatype_wrap!(bool, Bool);
+
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = match self {
@@ -67,7 +91,7 @@ impl Display for DataType {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
+#[derive(Debug)]
 pub enum Value<'a> {
     String(Cow<'a, str>),
     Bytes(Cow<'a, [u8]>),
