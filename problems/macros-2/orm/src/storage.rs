@@ -40,7 +40,7 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
     }
 
     fn create_table(&self, schema: &Schema) -> Result<()> {
-        let mut query = format!(
+        let query = format!(
             "CREATE TABLE {}(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         {}
@@ -83,7 +83,7 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
         if schema.obj_fields.is_empty() {
             return Ok(());
         }
-        let mut sql_query = format!("UPDATE {} SET", schema.table_name);
+        let mut sql_query = format!("UPDATE {} SET ", schema.table_name);
         let updated_vals = schema
             .obj_fields
             .iter()
@@ -91,7 +91,7 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
             .collect::<Vec<_>>()
             .join(",");
         write!(&mut sql_query, "{}", updated_vals).unwrap();
-        write!(&mut sql_query, "WHERE id = ?").unwrap();
+        write!(&mut sql_query, "WHERE id = {}", id).unwrap();
 
         let params = row.iter().map(|val| val as &dyn ToSql).collect::<Vec<_>>();
         self.execute(&sql_query, params.as_slice()).map_err(|e| {

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-use std::marker::PhantomData;
+use std::{borrow::Borrow, marker::PhantomData};
 
 use crate::{data::DataType, object::Schema, ObjectId};
 use thiserror::Error;
@@ -37,31 +37,24 @@ impl Error {
 pub struct ErrorCtx<'a> {
     pub schema: Option<&'a Schema>,
     pub object_id: Option<ObjectId>,
-    // pub obj_ty_name: Option<&'static str>,
-    // pub table_name: Option<&'static str>,
-    // pub field_name: Option<&'static str>,
-    // pub column_name: Option<&'static str>,
-
-    // pub expected_type: Option<DataType>,
-    // pub got_type: Option<String>,
 }
 
 impl<'a> ErrorCtx<'a> {
-    pub fn new(schema: Option<&Schema>, object_id: Option<ObjectId>) -> Self {
+    pub fn new(schema: Option<&'a Schema>, object_id: Option<ObjectId>) -> Self {
         Self { schema, object_id }
     }
 }
 
 pub struct ErrorWithCtx<'a, Err> {
-    err: Err,
+    err: Box<Err>,
     ctx: ErrorCtx<'a>,
     lifetime: PhantomData<&'a Err>,
 }
 
 impl<'a, Err> ErrorWithCtx<'a, Err> {
-    pub fn new(err: Err, ctx: ErrorCtx) -> Self {
+    pub fn new(err: Err, ctx: ErrorCtx<'a>) -> Self {
         Self {
-            err,
+            err: Box::new(err),
             ctx,
             lifetime: PhantomData,
         }
@@ -71,19 +64,19 @@ impl<'a, Err> ErrorWithCtx<'a, Err> {
 impl<'a> From<ErrorWithCtx<'a, rusqlite::Error>> for Error {
     fn from(err: ErrorWithCtx<rusqlite::Error>) -> Self {
         let ctx_schema = err.ctx.schema.unwrap();
-        match &err.err {
+        match *err.err {
             rusqlite::Error::QueryReturnedNoRows => Error::NotFound(Box::new(NotFoundError {
                 object_id: err.ctx.object_id.unwrap(),
                 type_name: &ctx_schema.obj_ty,
             })),
 
-            rusqlite::Error::InvalidColumnType(field_idx, column, ty_got) => {
+            rusqlite::Error::InvalidColumnType(field_idx, _, ty_got) => {
                 Error::UnexpectedType(Box::new(UnexpectedTypeError {
-                    type_name: ctx_schema.obj_ty,
-                    attr_name: ctx_schema.obj_fields[*field_idx].name,
+                    type_name: ctx_schema.obj_ty.into(),
+                    attr_name: ctx_schema.obj_fields[field_idx].name,
                     table_name: ctx_schema.table_name,
-                    column_name: column,
-                    expected_type: ctx_schema.obj_fields[*field_idx].data_ty,
+                    column_name: ctx_schema.obj_fields[field_idx].column,
+                    expected_type: ctx_schema.obj_fields[field_idx].data_ty,
                     got_type: ty_got.to_string(),
                 }))
             }
@@ -91,34 +84,31 @@ impl<'a> From<ErrorWithCtx<'a, rusqlite::Error>> for Error {
                 if err_sql.code == rusqlite::ErrorCode::DatabaseBusy {
                     return Error::LockConflict;
                 }
-                let column_name_opt = msg.as_ref().and_then(|txt| {
-                    if txt.contains("no such column:") {
-                        return txt.split("no such column:").last();
-                    } else if txt.contains("has no column named") {
-                        return txt.split("has no column named").last();
-                    }
-                    None
-                });
-
-                match column_name_opt {
-                    None => Error::Storage(Box::new(err.err)),
-                    Some(column_name) => {
-                        let attr_name = ctx_schema
-                            .obj_fields
-                            .iter()
-                            .find(|&&field| field.column == column_name)
-                            .map(|field| field.name)
-                            .unwrap();
-                        Error::MissingColumn(Box::new(MissingColumnError {
-                            type_name: ctx_schema.obj_ty,
-                            attr_name: attr_name,
-                            table_name: ctx_schema.table_name,
-                            column_name: &column_name,
-                        }))
-                    }
+                if msg.is_none() {
+                    return Error::Storage(Box::new(rusqlite::Error::SqliteFailure(err_sql, msg)));
                 }
+
+                let text = msg.as_ref().unwrap();
+                let column_name = if text.contains("no such column:") {
+                    text.split("no such column:").last().unwrap().trim()
+                } else {
+                    text.split("has no column named").last().unwrap().trim()
+                };
+
+                let field = ctx_schema
+                    .obj_fields
+                    .iter()
+                    .find(|&field| field.column == column_name)
+                    .unwrap();
+
+                Error::MissingColumn(Box::new(MissingColumnError {
+                    type_name: ctx_schema.obj_ty,
+                    attr_name: field.name,
+                    table_name: ctx_schema.table_name,
+                    column_name: field.column,
+                }))
             }
-            _ => Error::Storage(Box::new(err.err)),
+            _ => Error::Storage(err.err),
         }
     }
 }
