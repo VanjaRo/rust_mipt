@@ -25,7 +25,7 @@ fn start_proxy() -> (TcpListener, Child, String) {
         .args(&["-p", &port_str, "-d", &server_str])
         .spawn()
         .unwrap();
-    thread::sleep(time::Duration::from_millis(200));
+    thread::sleep(time::Duration::from_millis(300));
     (server, proxy_proc, format!("127.0.0.1:{}", port))
 }
 
@@ -166,7 +166,6 @@ fn two_clients() {
 
         assert_eq!(str::from_utf8(&read_buffer).unwrap(), "pong");
     });
-
     let client_b_thread = thread::spawn(move || {
         let msg = "ping";
         client_b.write_all(msg.as_bytes()).unwrap();
@@ -175,7 +174,6 @@ fn two_clients() {
 
         assert_eq!(str::from_utf8(&read_buffer).unwrap(), "pong");
     });
-
     let server_thread = thread::spawn(move || {
         let mut read_buffer: [u8; 4] = [0; 4];
 
@@ -191,6 +189,7 @@ fn two_clients() {
         connection.0.write_all(msg.as_bytes()).unwrap();
         connection_2.0.write_all(msg.as_bytes()).unwrap();
     });
+    println!("other there");
 
     client_a_thread.join().unwrap();
     client_b_thread.join().unwrap();
