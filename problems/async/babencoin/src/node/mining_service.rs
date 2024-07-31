@@ -69,15 +69,72 @@ impl MiningService {
         info_receiver: Receiver<MiningInfo>,
         block_sender: Sender<VerifiedBlock>,
     ) -> Self {
-        // TODO: your code goes here.
-        unimplemented!()
+        Self {
+            config,
+            info_receiver,
+            block_sender,
+        }
     }
 
     pub fn run(&mut self) {
-        // TODO: your code goes here.
-        unimplemented!()
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(self.config.thread_count)
+            .build()
+            .unwrap();
+
+        loop {
+            let mining_info = self.info_receiver.recv();
+            if let Err(e) = mining_info {
+                error!("unable to receive mining infor msg: {}", e);
+                continue;
+            }
+
+            let MiningInfo {
+                block_index,
+                prev_hash,
+                max_hash,
+                transactions,
+            } = mining_info.unwrap();
+
+            let selected_txs = transactions
+                .into_iter()
+                .take(self.config.max_tx_per_block)
+                .map(Into::into)
+                .collect::<Vec<Transaction>>();
+            let mut rng = thread_rng();
+            let reward: u64 = rng.gen_range(0..=MAX_REWARD);
+
+            let issuer = self.config.public_key.clone();
+
+            let new_block = loop {
+                let guessed_blocks: Option<VerifiedBlock> = pool
+                    .broadcast(|_| {
+                        let mut rng = thread_rng();
+                        let attrs = BlockAttributes {
+                            index: block_index,
+                            reward,
+                            nonce: rng.gen::<u64>(),
+                            timestamp: Utc::now(),
+                            issuer: issuer.clone(),
+                            max_hash,
+                            prev_hash,
+                        };
+                        Block {
+                            attrs,
+                            transactions: selected_txs.clone(),
+                        }
+                    })
+                    .into_iter()
+                    .filter_map(|block| block.clone().verified().ok())
+                    .next();
+                if let Some(block) = guessed_blocks {
+                    break block;
+                }
+            };
+            let send_res = self.block_sender.send(new_block);
+            if let Err(e) = send_res {
+                error!("error while trying to send newly generated block: {}", e);
+            }
+        }
     }
-
-    // TODO: your code goes here.
 }
-
