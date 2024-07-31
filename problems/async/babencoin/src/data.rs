@@ -164,7 +164,7 @@ impl Block {
         Block {
             attrs: BlockAttributes {
                 index: 0,
-                timestamp: Utc.timestamp(GENESIS_TIMESTAMP, 0),
+                timestamp: Utc.timestamp_opt(GENESIS_TIMESTAMP, 0).unwrap(),
                 reward: 0,
                 nonce: 0,
                 issuer: WalletId::of_genesis(),
@@ -446,7 +446,7 @@ mod tests {
                     index: 1,
                     reward: MAX_REWARD,
                     nonce: 27532,
-                    timestamp: Utc.timestamp(1626003028, 0),
+                    timestamp: Utc.timestamp_opt(1626003028, 0).unwrap(),
                     issuer: priv_key.to_public_key().into(),
                     max_hash: [255u8; HASH_LEN],
                     prev_hash: *genesis.hash(),
