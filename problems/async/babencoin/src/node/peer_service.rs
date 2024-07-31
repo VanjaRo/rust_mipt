@@ -123,18 +123,6 @@ impl PeerService {
             session_id
         );
 
-        self.peer_event_sender
-            .send(PeerEvent {
-                session_id,
-                event_kind: PeerEventKind::Connected,
-            })
-            .expect(
-                format!(
-                    "couldn't send connected event for {}",
-                    stream.local_addr().unwrap()
-                )
-                .as_str(),
-            );
         let stream_arc = Arc::new(stream);
         self.init_tcp_read(stream_arc.clone(), session_id);
 
@@ -145,6 +133,19 @@ impl PeerService {
             .write()
             .unwrap()
             .insert(session_id, comm_kind_snd);
+
+        self.peer_event_sender
+            .send(PeerEvent {
+                session_id,
+                event_kind: PeerEventKind::Connected,
+            })
+            .expect(
+                format!(
+                    "couldn't send connected event for {}",
+                    stream_arc.local_addr().unwrap()
+                )
+                .as_str(),
+            );
     }
 
     fn init_tcp_read(&self, stream_arc: Arc<TcpStream>, session_id: SessionId) {
@@ -164,7 +165,12 @@ impl PeerService {
                 }
 
                 if message.last().unwrap() == &0u8 {
-                    if let Ok(pmsg) = serde_json::from_slice::<PeerMessage>(&message) {
+                    let message = message.split_last().unwrap().1;
+                    let str_json = String::from_utf8(message.into())
+                        .expect("failed to convert bytes array to valid utf_8");
+                    debug!("New json has come: {}", str_json);
+
+                    if let Ok(pmsg) = serde_json::from_str::<PeerMessage>(&str_json) {
                         if let Ok(verified_msg) = pmsg.verified() {
                             event_sender
                                 .send(PeerEvent {
@@ -249,13 +255,15 @@ impl PeerService {
                 command_kind,
             } = command_receiver.recv().expect("error receiving command");
 
-            peers
+            let send_err = peers
                 .read()
                 .expect("failed to take read lock on peers map")
                 .get(&session_id)
                 .unwrap()
-                .send(command_kind)
-                .expect("failed to send command kind");
+                .send(command_kind);
+            if let Err(e) = send_err {
+                error!("error while trying to send a command_kind: {e}");
+            }
         });
     }
 
