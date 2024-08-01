@@ -1,17 +1,15 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    block_forest::{BlockForest},
-    data::{
-        BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction,
-    },
+    block_forest::BlockForest,
+    data::{BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction},
     node::{
         mining_service::MiningInfo,
         peer_service::{PeerCommand, PeerCommandKind, PeerEvent, PeerEventKind, SessionId},
     },
 };
 
-use anyhow::{Result};
+use anyhow::Result;
 use crossbeam::{
     channel::{never, tick, Receiver, RecvError, Sender},
     select,
@@ -93,7 +91,6 @@ impl GossipService {
             .values()
             .cloned()
             .collect::<Vec<VerifiedTransaction>>();
-        // debug!("sending mining info");
 
         let send_res = self.mining_info_sender.send(MiningInfo {
             block_index: self.block_forest.head().index + 1,
@@ -118,14 +115,16 @@ impl GossipService {
             event_kind,
         } = peer_event_msg.unwrap();
 
-        debug!("new peer event {:?}", event_kind);
+        trace!("new peer event {:?}", event_kind);
 
         let cmds = match event_kind {
             PeerEventKind::Connected => self.new_session_cmds(session_id),
             PeerEventKind::Disconnected => self.terminate_session_cmds(session_id),
             PeerEventKind::NewMessage(msg) => self.new_message_cmds(msg, session_id),
         };
-        debug!("expected to send such commands: {:?}", cmds);
+
+        trace!("expected to send such commands: {:?}", cmds);
+
         cmds.into_iter().for_each(|peer_cmd| {
             self.command_sender
                 .send(peer_cmd)

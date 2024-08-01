@@ -12,9 +12,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
     net::{Shutdown, SocketAddr, TcpListener, TcpStream},
-    sync::{
-        Arc, RwLock,
-    },
+    sync::{Arc, RwLock},
     thread,
     time::Duration,
 };
@@ -91,6 +89,7 @@ impl PeerService {
         self.handle_new_conns();
     }
 
+    // retries currently not supported
     // fn init_connect_retry(&mut self) {
     //     thread::spawn(|| {})
     // }
@@ -175,6 +174,7 @@ impl PeerService {
                             session_id,
                             stream_arc.peer_addr().unwrap(),
                         );
+
                         // Process the complete message
                         if Self::process_the_message(
                             message.clone(),
@@ -317,12 +317,14 @@ impl PeerService {
                 "for session {} received new command {:?}",
                 session_id, command_kind
             );
-            let peers_rlock = peers.read().expect("failed to take read lock on peers map");
+            let peers_rlock = peers
+                .read()
+                .expect("failed to take read lock on peers map")
+                .get(&session_id)
+                .unwrap()
+                .send(command_kind);
 
-            let sender = peers_rlock.get(&session_id).unwrap();
-            // debug!("sender: {:?}, with session_id: {}", sender, session_id);
-
-            if let Err(e) = sender.send(command_kind) {
+            if let Err(e) = peers_rlock {
                 error!("error while trying to send a command_kind: {e}");
             } else {
                 continue;
@@ -332,16 +334,6 @@ impl PeerService {
                 .write()
                 .expect("failed to take read lock on peers map")
                 .remove(&session_id);
-
-            // let send_err = peers
-            //     .read()
-            //     .expect("failed to take read lock on peers map")
-            //     .get(&session_id)
-            //     .unwrap()
-            //     .send(command_kind);
-            // if let Err(e) = send_err {
-            //     error!("error while trying to send a command_kind: {e}");
-            // }
         });
     }
 

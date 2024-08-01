@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{
-    collections::HashSet,
-};
+use std::collections::HashSet;
 
 use crate::{
     data::{
@@ -12,13 +10,12 @@ use crate::{
     util::{deserialize_wallet_id, serialize_wallet_id},
 };
 
-
 use chrono::Utc;
 use crossbeam::channel::{Receiver, Sender};
 
 use log::*;
 use rand::{thread_rng, Rng};
-use rayon::{ThreadPoolBuilder};
+use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,8 +57,7 @@ pub struct MiningService {
     config: MiningServiceConfig,
     info_receiver: Receiver<MiningInfo>,
     block_sender: Sender<VerifiedBlock>,
-    // a assume that a node without any new incoming txs would
-    // have same sequence of pending txs
+    // a assume that any unique node has a unique comment
     computed_txs: HashSet<TransactionHash>,
 }
 
@@ -85,7 +81,7 @@ impl MiningService {
             .build()
             .unwrap();
 
-        debug!("starting mining with config: {:?}", self.config);
+        trace!("starting mining with config: {:?}", self.config);
 
         loop {
             let mining_info = self.info_receiver.recv();
@@ -112,7 +108,7 @@ impl MiningService {
             }
 
             for tx in selected_txs.iter() {
-                debug!("mining tx with comments: {}", tx.comment);
+                trace!("mining tx with comments: {}", tx.comment);
             }
 
             let mut rng = thread_rng();
