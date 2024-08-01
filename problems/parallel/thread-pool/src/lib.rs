@@ -3,10 +3,7 @@
 use crossbeam::channel::{bounded, unbounded, Receiver, Sender};
 use std::{
     panic::{catch_unwind, AssertUnwindSafe},
-    sync::{
-        atomic::{AtomicU32, AtomicUsize},
-        Arc,
-    },
+    sync::{atomic::AtomicUsize, Arc},
     thread,
 };
 

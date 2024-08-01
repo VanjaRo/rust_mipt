@@ -5,6 +5,7 @@ use std::{
     collections::HashMap,
 };
 
+#[derive(Default)]
 pub struct Context {
     hmap_k_v: HashMap<String, Box<dyn Any>>,
     hmap_t_v: HashMap<TypeId, Box<dyn Any>>,
@@ -12,10 +13,7 @@ pub struct Context {
 
 impl Context {
     pub fn new() -> Self {
-        Self {
-            hmap_k_v: HashMap::new(),
-            hmap_t_v: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn insert<K, V>(&mut self, key: K, obj: V)

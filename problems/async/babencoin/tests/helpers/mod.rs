@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use babencoin::{
-    data::{Block, BlockHash, PeerMessage, HASH_LEN},
+    data::{Block, BlockHash, PeerMessage, VerifiedTransaction, HASH_LEN},
     node,
 };
 
@@ -46,9 +46,9 @@ impl Drop for Env {
     fn drop(&mut self) {
         self.node.kill().ok();
         if thread::panicking() {
-            eprintln!("=== BEGIN LOGS OF TEST '{}' ===", self.name);
-            eprintln!("{}", fs::read_to_string(&self.log_file_path).unwrap());
-            eprintln!("=== END LOGS OF TEST '{}' ===", self.name);
+            // eprintln!("=== BEGIN LOGS OF TEST '{}' ===", self.name);
+            // eprintln!("{}", fs::read_to_string(&self.log_file_path).unwrap());
+            // eprintln!("=== END LOGS OF TEST '{}' ===", self.name);
         }
     }
 }
@@ -56,6 +56,7 @@ impl Drop for Env {
 impl Env {
     pub fn new(name: &'static str, mut config: node::Config) -> Self {
         let port = thread_rng().gen_range(49152..65536);
+        // let port = 49155;
         let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
         config.peer_service.listen_address = Some(addr.to_string());
 
@@ -79,7 +80,7 @@ impl Env {
             .unwrap();
         config_file.flush().unwrap();
 
-        let log_file_path = dir.join("stderr").to_owned();
+        let log_file_path = dir.join("stderr.txt").to_owned();
         let log_file = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -260,6 +261,10 @@ pub fn random_block(index: u64) -> Block {
         .checked_add_signed(chrono::Duration::minutes(10 * index as i64))
         .unwrap();
     block
+}
+
+pub fn get_signed_tx(key: &RSAPrivateKey, comment: &str) -> Result<VerifiedTransaction> {
+    VerifiedTransaction::sign(&key, generate_public_key().into(), 0, 0, comment.into())
 }
 
 pub fn generate_private_key() -> RSAPrivateKey {

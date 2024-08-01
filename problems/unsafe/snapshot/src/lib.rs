@@ -318,7 +318,7 @@ impl<'a> Snapshot<'a> {
     }
 
     pub fn get_node(&self, id: &ObjectId) -> Option<&Node<'a>> {
-        self.node_map.get(&id).map(|n| n.as_ref())
+        self.node_map.get(id).map(|n| n.as_ref())
     }
 
     pub fn get_node_segment(&self, id: &ObjectId) -> Option<&NodeSegment<'a>> {

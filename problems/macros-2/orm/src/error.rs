@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-use std::{borrow::Borrow, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::{data::DataType, object::Schema, ObjectId};
 use thiserror::Error;
@@ -67,12 +67,12 @@ impl<'a> From<ErrorWithCtx<'a, rusqlite::Error>> for Error {
         match *err.err {
             rusqlite::Error::QueryReturnedNoRows => Error::NotFound(Box::new(NotFoundError {
                 object_id: err.ctx.object_id.unwrap(),
-                type_name: &ctx_schema.obj_ty,
+                type_name: ctx_schema.obj_ty,
             })),
 
             rusqlite::Error::InvalidColumnType(field_idx, _, ty_got) => {
                 Error::UnexpectedType(Box::new(UnexpectedTypeError {
-                    type_name: ctx_schema.obj_ty.into(),
+                    type_name: ctx_schema.obj_ty,
                     attr_name: ctx_schema.obj_fields[field_idx].name,
                     table_name: ctx_schema.table_name,
                     column_name: ctx_schema.obj_fields[field_idx].column,
