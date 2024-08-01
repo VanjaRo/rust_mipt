@@ -2,7 +2,9 @@
 
 use crate::{
     block_forest::{self, BlockForest},
-    data::{BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction},
+    data::{
+        Block, BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction,
+    },
     node::{
         mining_service::MiningInfo,
         peer_service::{PeerCommand, PeerCommandKind, PeerEvent, PeerEventKind, SessionId},
@@ -69,21 +71,19 @@ impl GossipService {
     }
 
     pub fn run(&mut self) {
-        let request_unknown_ticker = (|| {
-            if self.config.eager_requests_interval.is_zero() {
-                never()
-            } else {
-                tick(self.config.eager_requests_interval)
-            }
-        })();
+        let request_unknown_ticker = if self.config.eager_requests_interval.is_zero() {
+            never()
+        } else {
+            tick(self.config.eager_requests_interval)
+        };
 
         loop {
-            self.send_mining_info();
             select! {
                 recv(&self.event_receiver) -> msg => self.handle_peer_event(msg),
                 recv(&self.block_receiver) -> msg => self.spread_mined_block(msg),
                 recv(&request_unknown_ticker) -> _ => self.request_unknown_blocks(),
             }
+            self.send_mining_info();
         }
     }
 
@@ -94,10 +94,11 @@ impl GossipService {
             .values()
             .cloned()
             .collect::<Vec<VerifiedTransaction>>();
+        // debug!("sending mining info");
 
         let send_res = self.mining_info_sender.send(MiningInfo {
             block_index: self.block_forest.head().index + 1,
-            prev_hash: self.block_forest.head().hash().clone(),
+            prev_hash: *self.block_forest.head().hash(),
             max_hash: self.block_forest.next_max_hash(),
             transactions,
         });
@@ -118,12 +119,14 @@ impl GossipService {
             event_kind,
         } = peer_event_msg.unwrap();
 
+        debug!("new peer event {:?}", event_kind);
+
         let cmds = match event_kind {
             PeerEventKind::Connected => self.new_session_cmds(session_id),
             PeerEventKind::Disconnected => self.terminate_session_cmds(session_id),
             PeerEventKind::NewMessage(msg) => self.new_message_cmds(msg, session_id),
         };
-        // TODO: add logging
+        debug!("expected to send such commands: {:?}", cmds);
         cmds.into_iter().for_each(|peer_cmd| {
             self.command_sender
                 .send(peer_cmd)
@@ -135,13 +138,19 @@ impl GossipService {
         self.sessions_cache
             .blocks
             .insert(session_id, HashSet::new());
+        let cur_session_blocks = self.sessions_cache.blocks.get_mut(&session_id).unwrap();
+
         self.sessions_cache.txs.insert(session_id, HashSet::new());
+        let cur_session_txs = self.sessions_cache.txs.get_mut(&session_id).unwrap();
 
         let block_forest = &self.block_forest;
         // size = all pending + head
         let mut cmds = Vec::with_capacity(block_forest.pending_transactions().len() + 1);
 
         let head = block_forest.head();
+        cur_session_blocks.insert(*head.hash());
+        debug!("head hash: {:?}", *head.hash());
+
         cmds.push(PeerCommand {
             session_id,
             command_kind: PeerCommandKind::SendMessage(VerifiedPeerMessage::Block(Box::new(
@@ -153,11 +162,14 @@ impl GossipService {
             block_forest
                 .pending_transactions()
                 .values()
-                .map(|verif_tx| PeerCommand {
-                    session_id,
-                    command_kind: PeerCommandKind::SendMessage(VerifiedPeerMessage::Transaction(
-                        Box::new(verif_tx.clone()),
-                    )),
+                .map(|verif_tx| {
+                    cur_session_txs.insert(*verif_tx.hash());
+                    PeerCommand {
+                        session_id,
+                        command_kind: PeerCommandKind::SendMessage(
+                            VerifiedPeerMessage::Transaction(Box::new(verif_tx.clone())),
+                        ),
+                    }
                 }),
         );
         cmds
@@ -187,16 +199,33 @@ impl GossipService {
         }
     }
 
-    fn add_and_spread_block_cmnds(&mut self, block_box: Box<VerifiedBlock>) -> Vec<PeerCommand> {
+    fn add_and_spread_block_cmnds(&mut self, block_box: Box<VerifiedBlock>) {
+        if self.block_forest.find_block(block_box.hash()).is_some() {
+            return;
+        }
+        let block_cmds = self.add_block_cmnds(block_box);
+        for block_cmd in block_cmds.iter() {
+            debug!(
+                "new block cmds to be later spread: {:?} ",
+                block_cmd.session_id
+            );
+        }
+
+        block_cmds.into_iter().for_each(|peer_cmd| {
+            self.command_sender
+                .send(peer_cmd)
+                .expect("unable to send new bock comand")
+        });
+    }
+
+    fn add_block_cmnds(&mut self, block_box: Box<VerifiedBlock>) -> Vec<PeerCommand> {
         match self.block_forest.add_block(*block_box.clone()) {
             Ok(()) => self
                 .sessions_cache
                 .blocks
                 .par_iter_mut()
                 .filter_map(|(session_id, known_blocks)| {
-                    known_blocks
-                        .insert(block_box.hash().clone())
-                        .then_some(session_id)
+                    known_blocks.insert(*block_box.hash()).then_some(session_id)
                 })
                 .map(|&session_id| PeerCommand {
                     session_id,
@@ -222,14 +251,14 @@ impl GossipService {
             .sessions_cache
             .blocks
             .get_mut(&from_session_id)
-            .and_then(|known_blocks| Some(known_blocks.insert(block_box.hash().clone())));
+            .map(|known_blocks| known_blocks.insert(*block_box.hash()));
 
         if cache_updated.is_none() {
             error!("new blocks from unknown session");
             return vec![];
         }
 
-        self.add_and_spread_block_cmnds(block_box)
+        self.add_block_cmnds(block_box)
     }
 
     fn new_tx_cmds(
@@ -242,7 +271,7 @@ impl GossipService {
             .sessions_cache
             .txs
             .get_mut(&from_session_id)
-            .and_then(|known_txs| Some(known_txs.insert(tx_box.hash().clone())));
+            .map(|known_txs| known_txs.insert(*tx_box.hash()));
 
         if cache_updated.is_none() {
             error!("new txs from unknown session");
@@ -250,22 +279,29 @@ impl GossipService {
         }
 
         match self.block_forest.add_transaction(*tx_box.clone()) {
-            Ok(()) => self
-                .sessions_cache
-                .txs
-                .par_iter_mut()
-                .filter_map(|(session_id, known_txs)| {
-                    known_txs
-                        .insert(tx_box.hash().clone())
-                        .then_some(session_id)
-                })
-                .map(|&session_id| PeerCommand {
-                    session_id,
-                    command_kind: PeerCommandKind::SendMessage(VerifiedPeerMessage::Transaction(
-                        tx_box.clone(),
-                    )),
-                })
-                .collect(),
+            Ok(()) => {
+                let txs = self
+                    .sessions_cache
+                    .txs
+                    .par_iter_mut()
+                    .filter_map(|(session_id, known_txs)| {
+                        known_txs.insert(*tx_box.hash()).then_some(session_id)
+                    })
+                    .map(|&session_id| PeerCommand {
+                        session_id,
+                        command_kind: PeerCommandKind::SendMessage(
+                            VerifiedPeerMessage::Transaction(tx_box.clone()),
+                        ),
+                    })
+                    .collect::<Vec<PeerCommand>>();
+                for tx in txs.iter() {
+                    debug!(
+                        "add new tx to: {:?} from: {:?}",
+                        tx.session_id, from_session_id
+                    );
+                }
+                txs
+            }
             Err(e) => {
                 error!("new block failed to add: {}", e);
                 vec![]
@@ -278,6 +314,7 @@ impl GossipService {
         block_hash: BlockHash,
         session_id: SessionId,
     ) -> Vec<PeerCommand> {
+        debug!("requested block hash: {:?}", block_hash);
         match self.block_forest.find_block(&block_hash) {
             Some(block) => vec![PeerCommand {
                 session_id,
@@ -303,15 +340,14 @@ impl GossipService {
             .block_forest
             .unknown_block_hashes()
             .iter()
-            .map(|block_hash| {
+            .flat_map(|block_hash| {
                 known_session_ids.iter().map(|&session_id| PeerCommand {
-                    session_id: session_id.clone(),
+                    session_id: *session_id,
                     command_kind: PeerCommandKind::SendMessage(VerifiedPeerMessage::Request {
-                        block_hash: block_hash.clone(),
+                        block_hash: *block_hash,
                     }),
                 })
-            })
-            .flatten();
+            });
 
         cmds_iter.for_each(|peer_cmd| {
             self.command_sender
@@ -325,6 +361,9 @@ impl GossipService {
             error!("unable to receive peer event msg: {}", e);
             return;
         }
-        self.add_and_spread_block_cmnds(Box::new(peer_block_msg.unwrap()));
+
+        debug!("new block mined");
+
+        self.add_and_spread_block_cmnds(Box::new(peer_block_msg.unwrap()))
     }
 }

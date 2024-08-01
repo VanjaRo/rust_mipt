@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Display},
     io::{self, BufRead, BufReader, ErrorKind, Read, Write},
-    net::{Shutdown, TcpListener, TcpStream},
+    net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, RwLock,
@@ -25,6 +25,7 @@ use std::{
 
 const BUF_SIZE: usize = 65536;
 const MAX_RETRIES: usize = 5;
+const MSG_DELIM: u8 = 0u8;
 
 pub type SessionId = u64;
 
@@ -92,6 +93,10 @@ impl PeerService {
         self.handle_new_conns();
     }
 
+    // fn init_connect_retry(&mut self) {
+    //     thread::spawn(|| {})
+    // }
+
     fn init_dial_conns(&mut self) {
         for node in self.config.dial_addresses.iter() {
             for _ in 0..MAX_RETRIES {
@@ -124,15 +129,16 @@ impl PeerService {
         );
 
         let stream_arc = Arc::new(stream);
-        self.init_tcp_read(stream_arc.clone(), session_id);
 
         let (comm_kind_snd, comm_kind_recv) = unbounded();
-        self.init_tcp_write(stream_arc.clone(), comm_kind_recv);
 
         self.peers
             .write()
             .unwrap()
             .insert(session_id, comm_kind_snd);
+
+        self.init_tcp_read(stream_arc.clone(), session_id);
+        self.init_tcp_write(stream_arc.clone(), comm_kind_recv);
 
         self.peer_event_sender
             .send(PeerEvent {
@@ -142,7 +148,7 @@ impl PeerService {
             .expect(
                 format!(
                     "couldn't send connected event for {}",
-                    stream_arc.local_addr().unwrap()
+                    stream_arc.peer_addr().unwrap()
                 )
                 .as_str(),
             );
@@ -153,63 +159,104 @@ impl PeerService {
         thread::spawn(move || {
             let mut r_socket = BufReader::with_capacity(BUF_SIZE, stream_arc.as_ref());
             let mut message = Vec::with_capacity(BUF_SIZE);
-            loop {
-                message.clear();
-
-                let mut filled_buf = r_socket.fill_buf().expect("error while reading a socket");
-                let read_bytes = filled_buf.read_until(0u8, &mut message).unwrap();
-                r_socket.consume(read_bytes);
-
-                if read_bytes == 0 {
+            'read_loop: loop {
+                let res_buf = r_socket.fill_buf();
+                if let Err(e) = res_buf {
+                    error!("error while filling a buf: {}", e);
+                    break;
+                }
+                let buf = res_buf.unwrap();
+                if buf.is_empty() {
                     continue;
                 }
 
-                if message.last().unwrap() == &0u8 {
-                    let message = message.split_last().unwrap().1;
-                    let str_json = String::from_utf8(message.into())
-                        .expect("failed to convert bytes array to valid utf_8");
-                    debug!("New json has come: {}", str_json);
-
-                    if let Ok(pmsg) = serde_json::from_str::<PeerMessage>(&str_json) {
-                        if let Ok(verified_msg) = pmsg.verified() {
-                            event_sender
-                                .send(PeerEvent {
-                                    session_id,
-                                    event_kind: PeerEventKind::NewMessage(verified_msg),
-                                })
-                                .expect(
-                                    format!(
-                                        "couldn't send NewMessage event for {} into the channel",
-                                        stream_arc.local_addr().unwrap()
-                                    )
-                                    .as_str(),
-                                );
-                            continue;
+                for &byte in buf {
+                    if byte == MSG_DELIM {
+                        debug!(
+                            "message from session_id: {:?}, peer_addr: {:?}",
+                            session_id,
+                            stream_arc.peer_addr().unwrap(),
+                        );
+                        // Process the complete message
+                        if Self::process_the_message(
+                            message.clone(),
+                            &event_sender,
+                            session_id,
+                            stream_arc.peer_addr().unwrap(),
+                        )
+                        .is_err()
+                        {
+                            break 'read_loop;
                         }
+
+                        // Clear the message buffer for the next message
+                        message.clear();
+                    } else if message.len() >= BUF_SIZE {
+                        break 'read_loop;
                     } else {
-                        error!("couldn't deserialize the msg");
+                        message.push(byte);
                     }
-                } else {
+                }
+                if message.len() >= BUF_SIZE {
                     error!(
                         "the incoming message from {} was too large",
-                        stream_arc.local_addr().unwrap()
+                        stream_arc.peer_addr().unwrap()
                     );
+                    break;
                 }
 
+                let length = buf.len();
+                r_socket.consume(length);
+            }
+            debug!("sent peer event Disconnected for session_id {}", session_id);
+
+            event_sender
+                .send(PeerEvent {
+                    session_id,
+                    event_kind: PeerEventKind::Disconnected,
+                })
+                .expect(
+                    format!(
+                        "couldn't send Disconnected event for session_id {}",
+                        session_id
+                    )
+                    .as_str(),
+                );
+        });
+    }
+
+    // rewrite not to panic and return result
+    fn process_the_message(
+        message: Vec<u8>,
+        event_sender: &Sender<PeerEvent>,
+        session_id: SessionId,
+        peer_addr: SocketAddr,
+    ) -> Result<()> {
+        let str_json =
+            String::from_utf8(message).expect("failed to convert bytes array to valid utf_8");
+        debug!("new json from {:?} has come: {}", peer_addr, str_json);
+
+        if let Ok(pmsg) = serde_json::from_str::<PeerMessage>(&str_json) {
+            if let Ok(verified_msg) = pmsg.verified() {
                 event_sender
                     .send(PeerEvent {
                         session_id,
-                        event_kind: PeerEventKind::Disconnected,
+                        event_kind: PeerEventKind::NewMessage(verified_msg),
                     })
                     .expect(
                         format!(
-                            "couldn't send Disconnected event for {}",
-                            stream_arc.local_addr().unwrap()
+                            "couldn't send NewMessage event for {} into the channel",
+                            peer_addr
                         )
                         .as_str(),
-                    )
+                    );
+                return Ok(());
             }
-        });
+        } else {
+            error!("couldn't deserialize the msg");
+        }
+
+        bail!("error parsing a message")
     }
 
     fn init_tcp_write(
@@ -218,31 +265,44 @@ impl PeerService {
         comm_kind_receiver: Receiver<PeerCommandKind>,
     ) {
         thread::spawn(move || loop {
-            let command_kind = comm_kind_receiver
-                .recv()
-                .expect("couldn't receive a command kind");
+            let command_kind_res = comm_kind_receiver.recv();
+            if let Err(e) = command_kind_res {
+                error!("error while receiving a command kind: {}", e);
+                break;
+            }
+            let command_kind = command_kind_res.unwrap();
             let mut stream_ref = stream_arc.as_ref();
+
             match command_kind {
                 PeerCommandKind::SendMessage(verified_msg) => {
-                    debug!("new message to send: {:?}", verified_msg);
+                    debug!(
+                        "new message for: {:?}  content: {:?} ",
+                        stream_ref.peer_addr(),
+                        verified_msg,
+                    );
+                    let peer_msg: PeerMessage = verified_msg.into();
+                    let serde_write_res = Self::do_with_retry(|| {
+                        serde_json::to_writer::<_, PeerMessage>(&mut stream_ref, &peer_msg)
+                    });
+                    if let Err(e) = serde_write_res {
+                        error!("error while writing to stream with serde: {}", e);
+                        continue;
+                    }
+                    let write_res = Self::do_with_retry(|| stream_ref.write_all(b"\0"))
+                        .and_then(|_| Self::do_with_retry(|| stream_ref.flush()));
 
-                    serde_json::to_writer::<_, PeerMessage>(&mut stream_ref, &verified_msg.into())
-                        .expect("failed to serialize object ot json");
-                    stream_ref
-                        .write_all(b"\0")
-                        .expect("failed to write trailing zero");
+                    if let Err(e) = write_res {
+                        error!("error while writing to stream: {}", e);
+                    }
                 }
                 PeerCommandKind::Drop => {
-                    debug!(
-                        "connection with {:?} is dropped",
-                        stream_ref.local_addr().unwrap()
-                    );
-                    stream_ref
-                        .shutdown(Shutdown::Both)
-                        .expect("shutdown call failed");
+                    debug!("connection dropped",);
+                    if let Err(e) = stream_ref.shutdown(Shutdown::Both) {
+                        error!("error while dropping: {e}");
+                    }
                     break;
                 }
-            }
+            };
         });
     }
 
@@ -255,15 +315,35 @@ impl PeerService {
                 command_kind,
             } = command_receiver.recv().expect("error receiving command");
 
-            let send_err = peers
-                .read()
-                .expect("failed to take read lock on peers map")
-                .get(&session_id)
-                .unwrap()
-                .send(command_kind);
-            if let Err(e) = send_err {
+            debug!(
+                "for session {} received new command {:?}",
+                session_id, command_kind
+            );
+            let peers_rlock = peers.read().expect("failed to take read lock on peers map");
+
+            let sender = peers_rlock.get(&session_id).unwrap();
+            // debug!("sender: {:?}, with session_id: {}", sender, session_id);
+
+            if let Err(e) = sender.send(command_kind) {
                 error!("error while trying to send a command_kind: {e}");
+            } else {
+                continue;
             }
+            // removing corrupted sender
+            peers
+                .write()
+                .expect("failed to take read lock on peers map")
+                .remove(&session_id);
+
+            // let send_err = peers
+            //     .read()
+            //     .expect("failed to take read lock on peers map")
+            //     .get(&session_id)
+            //     .unwrap()
+            //     .send(command_kind);
+            // if let Err(e) = send_err {
+            //     error!("error while trying to send a command_kind: {e}");
+            // }
         });
     }
 
@@ -297,5 +377,19 @@ impl PeerService {
             thread::sleep(self.config.dial_cooldown)
         }
         panic!("can't establish a peer service listener connection");
+    }
+
+    fn do_with_retry<F, E>(mut f: F) -> Result<(), E>
+    where
+        F: FnMut() -> Result<(), E>,
+    {
+        let mut last_res = Ok(());
+        for _ in 0..MAX_RETRIES {
+            last_res = f();
+            if last_res.is_ok() {
+                return last_res;
+            }
+        }
+        last_res
     }
 }
