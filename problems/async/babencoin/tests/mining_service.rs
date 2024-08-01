@@ -4,7 +4,8 @@ mod helpers;
 use std::collections::HashSet;
 
 use helpers::{
-    generate_private_key, generate_public_key, recv_message, send_message, wait_for_message,
+    generate_private_key, generate_public_key, get_signed_tx, recv_message, send_message,
+    wait_for_message,
 };
 
 use babencoin::{
@@ -21,10 +22,20 @@ use chrono::Duration;
 fn genesis_mining() {
     let mut config = node::Config::default();
     config.mining_service.thread_count = 1;
+    config.mining_service.max_tx_per_block = 1;
     config.mining_service.public_key = generate_public_key().into();
 
     let env = test_env!("genesis_mining", config);
     let mut conn = env.connect_to_node().unwrap();
+
+    let key = generate_private_key();
+
+    // generate 5 txs to make 5 new blocks to mine
+    for idx in 0..5 {
+        let comment = format!("kuku{}", idx);
+        let tx = get_signed_tx(&key, (&*comment).into()).unwrap();
+        send_message(&mut conn, PeerMessage::Transaction(Box::new(tx.into()))).unwrap();
+    }
 
     let mut block_forest = BlockForest::new();
 
@@ -70,10 +81,20 @@ fn genesis_mining() {
 fn no_repeated_parents() {
     let mut config = node::Config::default();
     config.mining_service.thread_count = 1;
+    config.mining_service.max_tx_per_block = 1;
     config.mining_service.public_key = generate_public_key().into();
 
     let env = test_env!("no_repeated_parents", config);
     let mut conn = env.connect_to_node().unwrap();
+
+    let key = generate_private_key();
+
+    // generate 5 txs to make 5 new blocks to mine
+    for idx in 0..5 {
+        let comment = format!("kuku{}", idx);
+        let tx = get_signed_tx(&key, (&*comment).into()).unwrap();
+        send_message(&mut conn, PeerMessage::Transaction(Box::new(tx.into()))).unwrap();
+    }
 
     let mut seen_prev_hashes = HashSet::new();
     while seen_prev_hashes.len() < 5 {
@@ -114,13 +135,23 @@ fn test_mining_difficulty() {
 
     let mut config = node::Config::default();
     config.mining_service.thread_count = 1;
+    config.mining_service.max_tx_per_block = 1;
     config.mining_service.public_key = generate_public_key().into();
 
     let env = test_env!("mining_difficulty", config);
     let mut conn = env.connect_to_node().unwrap();
 
+    let key = generate_private_key();
+
     for block in blocks.iter().skip(1).rev() {
         send_message(&mut conn, PeerMessage::Block(Box::new(block.clone()))).unwrap();
+    }
+
+    // generate 5 txs to make 5 new blocks to mine
+    for idx in 0..5 {
+        let comment = format!("kuku{}", idx);
+        let tx = get_signed_tx(&key, (&*comment).into()).unwrap();
+        send_message(&mut conn, PeerMessage::Transaction(Box::new(tx.into()))).unwrap();
     }
 
     let expected_prev_hash = blocks.last().unwrap().compute_hash();
@@ -189,6 +220,11 @@ fn max_tx_per_block() {
     received_transactions.sort_by_key(|tx| tx.comment.clone());
 
     // NB: for easier debugging.
+    println!("{:?}", transactions);
+    println!("----");
+    println!("{:?}", received_transactions);
+    println!("----");
+
     assert_eq!(transactions.len(), received_transactions.len());
     for (expected_tx, got_tx) in transactions.iter().zip(received_transactions.iter()) {
         assert_eq!(expected_tx, got_tx);

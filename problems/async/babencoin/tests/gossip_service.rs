@@ -3,6 +3,7 @@ mod helpers;
 
 use core::time;
 
+use chrono::Duration;
 use helpers::{
     ensure_absence, generate_private_key, generate_public_key, random_block, send_message, sync,
     wait_for_message,
@@ -17,7 +18,10 @@ use babencoin::{
 
 #[test]
 fn block_request() {
-    let env = test_env!("test_block_request");
+    let mut config = node::Config::default();
+    config.gossip_service.eager_requests_interval = time::Duration::from_millis(100);
+
+    let env = test_env!("test_block_request", config);
     let mut conn = env.connect_to_node().unwrap();
 
     wait_for_message(&mut conn, 10, |msg| match msg {
@@ -231,7 +235,10 @@ fn head_switch() {
 
 #[test]
 fn no_bad_block_memoization() {
-    let env = test_env!("test_no_bad_block_memoization");
+    let mut config = node::Config::default();
+    config.gossip_service.eager_requests_interval = time::Duration::from_millis(100);
+
+    let env = test_env!("test_no_bad_block_memoization", config);
     let mut conn = env.connect_to_node().unwrap();
 
     let ok_block = random_block(25);
