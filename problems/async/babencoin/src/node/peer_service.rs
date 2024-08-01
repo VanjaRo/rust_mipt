@@ -2,20 +2,18 @@
 
 use crate::data::{PeerMessage, VerifiedPeerMessage};
 
-use anyhow::{bail, Context, Result};
-use crossbeam::channel::{self, unbounded, Receiver, Sender};
+use anyhow::{bail, Result};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use log::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use std::{
     collections::HashMap,
-    fmt::{self, Display},
-    io::{self, BufRead, BufReader, ErrorKind, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex, RwLock,
+        Arc, RwLock,
     },
     thread,
     time::Duration,

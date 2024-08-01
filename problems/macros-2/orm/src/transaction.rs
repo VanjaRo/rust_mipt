@@ -37,7 +37,7 @@ impl<'a> Transaction<'a> {
     }
 
     fn ensure_table<T: Object>(&self) -> Result<()> {
-        let table_exists = self.inner.table_exists(&T::get_schema().table_name)?;
+        let table_exists = self.inner.table_exists(T::get_schema().table_name)?;
         if table_exists {
             return Ok(());
         }
@@ -75,8 +75,8 @@ impl<'a> Transaction<'a> {
             if let Some(obj) = self.obj_cash.borrow_mut().get(&id).cloned() {
                 return Ok(Tx {
                     id,
-                    state: state,
-                    obj: obj,
+                    state,
+                    obj,
                     lifetime: PhantomData,
                 });
             }
@@ -104,10 +104,10 @@ impl<'a> Transaction<'a> {
             let object = value.0.borrow();
             let state = self.state_cash.borrow().get(key).cloned().unwrap();
             match state.deref().get() {
-                ObjectState::Removed => self.inner.delete_row(key.clone(), object.get_schema())?,
+                ObjectState::Removed => self.inner.delete_row(*key, object.get_schema())?,
                 ObjectState::Modified => {
                     self.inner
-                        .update_row(key.clone(), object.get_schema(), &object.to_row())?
+                        .update_row(*key, object.get_schema(), &object.to_row())?
                 }
                 _ => {}
             }

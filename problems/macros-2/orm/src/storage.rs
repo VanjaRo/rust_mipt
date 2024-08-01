@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 use crate::{
     data::{DataType, Value},
-    error::{Error, ErrorCtx, ErrorWithCtx, NotFoundError, Result, UnexpectedTypeError},
+    error::{Error, NotFoundError, Result},
     object::Schema,
     ObjectId,
 };
@@ -113,7 +113,7 @@ impl<'a> StorageTransaction for rusqlite::Transaction<'a> {
         // SELECT co1, col2 FROM table WHERE id = 123
         // may add self.prepare_cached(sql)
 
-        if !self.table_exists(&schema.table_name).unwrap() {
+        if !self.table_exists(schema.table_name).unwrap() {
             return Err(Error::NotFound(Box::new(NotFoundError {
                 object_id: id,
                 type_name: schema.obj_ty,

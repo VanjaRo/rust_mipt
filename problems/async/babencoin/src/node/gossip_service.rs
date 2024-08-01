@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    block_forest::{self, BlockForest},
+    block_forest::{BlockForest},
     data::{
-        Block, BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction,
+        BlockHash, TransactionHash, VerifiedBlock, VerifiedPeerMessage, VerifiedTransaction,
     },
     node::{
         mining_service::MiningInfo,
@@ -11,19 +11,18 @@ use crate::{
     },
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Result};
 use crossbeam::{
-    channel::{self, never, tick, Receiver, RecvError, Sender},
+    channel::{never, tick, Receiver, RecvError, Sender},
     select,
 };
 use log::*;
-use rand::{seq::SliceRandom, thread_rng};
+
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use std::{
     collections::{HashMap, HashSet},
-    thread,
     time::Duration,
 };
 

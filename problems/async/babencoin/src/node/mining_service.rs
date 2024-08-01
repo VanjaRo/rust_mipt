@@ -2,8 +2,6 @@
 
 use std::{
     collections::HashSet,
-    sync::{Arc, RwLock},
-    thread,
 };
 
 use crate::{
@@ -14,13 +12,13 @@ use crate::{
     util::{deserialize_wallet_id, serialize_wallet_id},
 };
 
-use anyhow::{Context, Result};
+
 use chrono::Utc;
 use crossbeam::channel::{Receiver, Sender};
-use crossbeam::{channel, select};
+
 use log::*;
 use rand::{thread_rng, Rng};
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use rayon::{ThreadPoolBuilder};
 use serde::{Deserialize, Serialize};
 
 ////////////////////////////////////////////////////////////////////////////////
